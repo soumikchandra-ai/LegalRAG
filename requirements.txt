@@ -1,0 +1,9 @@
+langchain
+fastapi
+uvicorn
+langchain-community
+langchain-google-genai
+python-dotenv
+pydantic
+pymupdf
+faiss-cpu

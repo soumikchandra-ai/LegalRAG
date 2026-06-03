@@ -7,3 +7,4 @@ python-dotenv
 pydantic
 pymupdf
 faiss-cpu
+pypdf

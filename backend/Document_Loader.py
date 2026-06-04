@@ -24,6 +24,3 @@ def doc_loader(file_path:str,doc_type:str):
         document.append(doc)
         
     return document
-
-ans=doc_loader("data\Contract.pdf","Contract.pdf")
-print(type(ans))

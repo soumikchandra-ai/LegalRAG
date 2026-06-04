@@ -20,15 +20,10 @@ def doc_loader(file_path:str,doc_type:str):
         if not doc.page_content.strip():
             continue
         
-        document.append({
-            "page_content":doc.page_content,
-            "metadata":{
-                **doc.metadata,
-                "doc_type":doc_type
-            }
-        })
+        doc.metadata["doc_type"]=doc_type
+        document.append(doc)
         
     return document
 
-ans=doc_loader("data\Contract.pdf","contract")
-print(ans[0]["metadata"])
+ans=doc_loader("data\Contract.pdf","Contract.pdf")
+print(type(ans))

@@ -12,4 +12,3 @@ def split_docs(file_path:str,doc_type:str):
     splitted_docs=text_splitter.split_documents(doc)
     
     return splitted_docs
-

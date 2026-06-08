@@ -10,34 +10,39 @@ from Document_Loader import doc_loader
 from dotenv import load_dotenv
 
 load_dotenv()
-
+#Defining the Embedding model
 embedding=GoogleGenerativeAIEmbeddings(model="gemini-embedding-2-preview")
 
+#Loading the vector store
 vector_store=Chroma(
     persist_directory=r"C:\Users\Lenovo\OneDrive\Documents\LegalRAG\data\chroma_db",
     embedding_function=embedding,
     collection_name="sample"
 )
-#BM25 Retriever
+
+#BM25 Retriever to retrieve documents directly from the loaded document no need of embedding
 docs=doc_loader("data\Contract.pdf","contract")
 bm25_retriever=BM25Retriever.from_documents(docs)
 bm25_retriever.k=3
 query="What is the role of a consultant?"
 res=bm25_retriever.invoke(query)
 
-#Vector Retriever
+#Vector Retriever from the vector store(Chroma)
 retriever=vector_store.as_retriever(
     search_type="similarity",
     search_kwargs={"k":2}
 )
 
+#Ensembling both the retrievers->vector_retriever and the bm25_retriever
 ensemble_retriever=EnsembleRetriever(
     retrievers=[retriever,bm25_retriever],
     weights=[0.7,0.3]
 )
 
+#Defining the chat model
 model=ChatGoogleGenerativeAI(model="gemini-2.5-flash")
 
+#Contextualizing the recent query according to the previous chat history.
 contextualize_q_system_prompt=(
     """
     Given a chat history and a latest user quetsion
@@ -48,6 +53,7 @@ contextualize_q_system_prompt=(
     """
 )
 
+#Making a prompt from the contextualized query
 contextualize_q_prompt=ChatPromptTemplate.from_messages(
     [("system",contextualize_q_system_prompt),
     MessagesPlaceholder("chat_history"),
@@ -55,10 +61,12 @@ contextualize_q_prompt=ChatPromptTemplate.from_messages(
     ]
 )
 
+#History aware retriever
 history_aware_retriever=create_history_aware_retriever(
     model,ensemble_retriever,contextualize_q_prompt
 )
 
+#Final prompt which takes the contextualized query and gives the response accordingly
 qa_system_prompt=(
     """
     You are a professional Legal Advisor assistant for question-answering the
@@ -71,6 +79,7 @@ qa_system_prompt=(
     """
 )
 
+#Final prompt template which takes the contextualized query as the input and gives the response accordingly
 qa_prompt=ChatPromptTemplate.from_messages(
     [("system",qa_system_prompt),
     MessagesPlaceholder("chat_history"),
@@ -78,10 +87,18 @@ qa_prompt=ChatPromptTemplate.from_messages(
     ]
 )
 
+#Questions-Answer Chain creates a chain that combines all document text into a single context prompt 
+#and passes it to the LLM to answer a question.
 question_answer_chain=create_stuff_documents_chain(model,qa_prompt)
+
+#Combines the retriever chain and the QA chain into a final RAG Pipeline
+#It fetches the relevant document first the passes them to the LLM to get the response.
 rag_chain=create_retrieval_chain(history_aware_retriever,question_answer_chain)
 
+#Stores the chat history
 chat_history=[]
+
+#A BASIC CHATBOT
 while(True):
     query=input("\nUser: ")
     if(query.lower()=="exit"):

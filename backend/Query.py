@@ -1,17 +1,21 @@
 from langchain_google_genai import GoogleGenerativeAIEmbeddings,ChatGoogleGenerativeAI
 from langchain_chroma import Chroma
 from langchain_core.messages import AIMessage,HumanMessage
-from langchain_core.prompts import MessagesPlaceholder,ChatPromptTemplate
+from langchain_core.prompts import MessagesPlaceholder,ChatPromptTemplate,PromptTemplate
 from langchain_classic.chains import (create_history_aware_retriever,create_retrieval_chain)
 from langchain_classic.chains.combine_documents import (create_stuff_documents_chain)
 from langchain_community.retrievers import BM25Retriever
 from langchain_classic.retrievers import EnsembleRetriever
+from langchain_classic.retrievers.multi_query import MultiQueryRetriever
 from Document_Loader import doc_loader
 from dotenv import load_dotenv
 
 load_dotenv()
 #Defining the Embedding model
 embedding=GoogleGenerativeAIEmbeddings(model="gemini-embedding-2-preview")
+
+#Defining the chat model
+model=ChatGoogleGenerativeAI(model="gemini-2.5-flash")
 
 #Loading the vector store
 vector_store=Chroma(
@@ -24,8 +28,6 @@ vector_store=Chroma(
 docs=doc_loader("data\Contract.pdf","contract")
 bm25_retriever=BM25Retriever.from_documents(docs)
 bm25_retriever.k=3
-query="What is the role of a consultant?"
-res=bm25_retriever.invoke(query)
 
 #Vector Retriever from the vector store(Chroma)
 retriever=vector_store.as_retriever(
@@ -33,14 +35,25 @@ retriever=vector_store.as_retriever(
     search_kwargs={"k":2}
 )
 
-#Ensembling both the retrievers->vector_retriever and the bm25_retriever
-ensemble_retriever=EnsembleRetriever(
-    retrievers=[retriever,bm25_retriever],
-    weights=[0.7,0.3]
+#Prompt Template to generate three 3 different questions from the user's query fro better generation of results
+prompt=PromptTemplate(
+    template="Generate 3 different questions from this : {question}",
+    input_variables=['question']
 )
 
-#Defining the chat model
-model=ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+#Multi Query Retriever
+multi_query_retriever=MultiQueryRetriever.from_llm(
+    retriever=retriever,
+    llm=model,
+    prompt=prompt,
+    include_original=False
+)
+
+#Ensembling both the retrievers->vector_retriever and the bm25_retriever
+ensemble_retriever=EnsembleRetriever(
+    retrievers=[multi_query_retriever,bm25_retriever],
+    weights=[0.7,0.3]
+)
 
 #Contextualizing the recent query according to the previous chat history.
 contextualize_q_system_prompt=(

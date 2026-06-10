@@ -9,3 +9,5 @@ pymupdf
 faiss-cpu
 pypdf
 chroma
+transformers
+sentence-transformers

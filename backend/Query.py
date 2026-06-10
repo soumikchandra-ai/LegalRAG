@@ -7,6 +7,10 @@ from langchain_classic.chains.combine_documents import (create_stuff_documents_c
 from langchain_community.retrievers import BM25Retriever
 from langchain_classic.retrievers import EnsembleRetriever
 from langchain_classic.retrievers.multi_query import MultiQueryRetriever
+from sentence_transformers import CrossEncoder
+from langchain_core.retrievers import BaseRetriever
+from typing import List
+from langchain_core.documents import Document
 from Document_Loader import doc_loader
 from dotenv import load_dotenv
 
@@ -15,7 +19,7 @@ load_dotenv()
 embedding=GoogleGenerativeAIEmbeddings(model="gemini-embedding-2-preview")
 
 #Defining the chat model
-model=ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+model=ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite")
 
 #Loading the vector store
 vector_store=Chroma(
@@ -27,12 +31,12 @@ vector_store=Chroma(
 #BM25 Retriever to retrieve documents directly from the loaded document no need of embedding
 docs=doc_loader("data\Contract.pdf","contract")
 bm25_retriever=BM25Retriever.from_documents(docs)
-bm25_retriever.k=3
+bm25_retriever.k=10
 
 #Vector Retriever from the vector store(Chroma)
 retriever=vector_store.as_retriever(
     search_type="similarity",
-    search_kwargs={"k":2}
+    search_kwargs={"k":10}
 )
 
 #Prompt Template to generate three 3 different questions from the user's query fro better generation of results
@@ -74,9 +78,27 @@ contextualize_q_prompt=ChatPromptTemplate.from_messages(
     ]
 )
 
+##Reranking of retrieved documents
+reranker=CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+class RerankRetriever(BaseRetriever):
+    base_retriever:any
+    top_k:3
+    
+    def _get_relevant_documents(self, query:str)->List[Document]:
+        docs=self.base_retriever.invoke(query)
+        pairs=[(query,doc.page_content) for doc in docs]
+        
+        scores=reranker.predict(pairs)
+        ranked_docs=sorted(zip(docs,scores),key=lambda x:x[1],reverse=True)
+        
+        return [doc for doc,score in ranked_docs[:self.top_k]]
+
+rerank_retriever=RerankRetriever(base_retriever=ensemble_retriever,top_k=3)
+
 #History aware retriever
 history_aware_retriever=create_history_aware_retriever(
-    model,ensemble_retriever,contextualize_q_prompt
+    model,rerank_retriever,contextualize_q_prompt
 )
 
 #Final prompt which takes the contextualized query and gives the response accordingly

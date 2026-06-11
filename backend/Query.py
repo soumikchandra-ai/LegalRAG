@@ -11,6 +11,8 @@ from sentence_transformers import CrossEncoder
 from langchain_core.retrievers import BaseRetriever
 from typing import List
 from langchain_core.documents import Document
+import re
+from pathlib import Path
 from Document_Loader import doc_loader
 from dotenv import load_dotenv
 
@@ -36,7 +38,7 @@ bm25_retriever.k=10
 #Vector Retriever from the vector store(Chroma)
 retriever=vector_store.as_retriever(
     search_type="similarity",
-    search_kwargs={"k":10}
+    search_kwargs={"k":25}
 )
 
 #Prompt Template to generate three 3 different questions from the user's query fro better generation of results
@@ -83,16 +85,55 @@ reranker=CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
 class RerankRetriever(BaseRetriever):
     base_retriever:any
-    top_k:3
+    top_k:int=3
     
     def _get_relevant_documents(self, query:str)->List[Document]:
         docs=self.base_retriever.invoke(query)
-        pairs=[(query,doc.page_content) for doc in docs]
+        if not docs:
+            return []
         
+        section_pattern=re.compile(r'(?:^\s*|\n)(\d+)\.\s+([A-Z\s,]{3,})(?:\.|\n|$)')
+        page_pattern = re.compile(r'Page\s+(\d+)', re.IGNORECASE)
+        
+        pairs=[]
+        for doc in docs:
+            pairs.append((query,doc.page_content))
+            
         scores=reranker.predict(pairs)
         ranked_docs=sorted(zip(docs,scores),key=lambda x:x[1],reverse=True)
-        
-        return [doc for doc,score in ranked_docs[:self.top_k]]
+        final_docs=[]
+        for doc,scores in ranked_docs[:self.top_k]:
+            
+            metadata_page=doc.metadata.get("page",None)
+            page_num=str(metadata_page+1) if metadata_page is not None else "Unknown"
+            
+            page_matches = page_pattern.findall(doc.page_content)
+            if page_matches:
+                page_num = page_matches[-1]
+                
+            detected_section = "Unknown Section"
+            section_matches = list(section_pattern.finditer(doc.page_content))
+            if section_matches:
+                last_match = section_matches[-1]
+                detected_section = f"Section {last_match.group(1)} ({last_match.group(2).strip()})"
+            else:
+                for full_doc in docs:
+                    if doc.page_content[:50] in full_doc.page_content:
+                        full_text = full_doc.page_content
+                        chunk_idx = full_text.find(doc.page_content[:50])
+                        all_sections = list(section_pattern.finditer(full_text))
+                        for m in reversed(all_sections):
+                            if m.start() <= chunk_idx:
+                                detected_section = f"Section {m.group(1)} ({m.group(2).strip()})"
+                                break
+                        break
+            doc.page_content = (
+                f"[METADATA -> Section Context: {detected_section} | Verified Page: {page_num}]\n"
+                f"{doc.page_content}"
+            )
+            final_docs.append(doc)
+            
+        return final_docs
 
 rerank_retriever=RerankRetriever(base_retriever=ensemble_retriever,top_k=3)
 
@@ -104,12 +145,16 @@ history_aware_retriever=create_history_aware_retriever(
 #Final prompt which takes the contextualized query and gives the response accordingly
 qa_system_prompt=(
     """
-    You are a professional Legal Advisor assistant for question-answering the
-    questions asked by the user.Use the following pieces of retrieved
-    context to answer the question.If you don't know the answer, just
-    say I don't know.Use five sentences maximum to answer the question
-    in concise.You can use bullet points if required to give clear explanation.
-    \n\n
+    You are a professional Legal Advisor assistant for question-answering.
+    Use the following pieces of retrieved context to answer the question using a maximum of five sentences. 
+    You can use bullet points if required to give clear explanations.
+    CRITICAL CITATION RULES:
+    1. Every response MUST explicitly list the Document Name, Page Number, and Section/Clause number at the absolute beginning of your response.
+    2. Read the structural token header string injected at the start of each context block: e.g., '[METADATA -> Section Context: Section 2 (COMPENSATION) | Verified Page: 1]'. Use these exact values.
+    3. If a clause line begins with an embedded alphabet sub-letter marker (e.g., 'H. Invoices shall be...'), merge the parent section and subsection into a standardized legal citation pattern: "Section 2.H".
+    4. If the section or page is listed as "Unknown", look closely at the text strings nearby to trace the context, or do not guess. If you do not know the answer, say "I don't know."
+
+    Context:
     {context}
     """
 )

@@ -1,3 +1,4 @@
 .env
 vragenv/
 backend/multiquery.py
+data/chroma_db/

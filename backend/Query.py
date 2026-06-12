@@ -13,7 +13,7 @@ from typing import List
 from langchain_core.documents import Document
 import re
 from pathlib import Path
-from Document_Loader import doc_loader
+from backend.Document_Loader import doc_loader
 from dotenv import load_dotenv
 
 load_dotenv()

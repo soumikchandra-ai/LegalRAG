@@ -1,5 +1,5 @@
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from Document_Loader import doc_loader
+from backend.Document_Loader import doc_loader
 
 def split_docs(file_path:str,doc_type:str):
     #Loaded the file

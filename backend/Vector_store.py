@@ -1,5 +1,5 @@
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from Text_Splitter import split_docs
+from backend.Text_Splitter import split_docs
 from langchain_chroma import Chroma
 from dotenv import load_dotenv
 

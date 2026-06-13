@@ -1,9 +1,7 @@
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from backend.Document_Loader import doc_loader
 
-def split_docs(file_path:str,doc_type:str):
-    #Loaded the file
-    doc=doc_loader(file_path,doc_type)
+def split_docs(documents):
     
     #Splitted the document using Recursive Character Text Splitter
     text_splitter=RecursiveCharacterTextSplitter(
@@ -11,6 +9,6 @@ def split_docs(file_path:str,doc_type:str):
     chunk_overlap=100
     )
     
-    splitted_docs=text_splitter.split_documents(doc)
+    chunks=splitted_docs=text_splitter.split_documents(documents)
     
-    return splitted_docs
+    return chunks

@@ -10,6 +10,12 @@ from backend.Vector_Store import create_vector_store
 from backend.rag_pipeline import get_rag_chain
 from langchain_core.messages import HumanMessage,AIMessage
 
+@st.cache_resource
+def build_rag_chain(document_key):
+    documents=st.session_state["cached_documents"]
+    vector_store=create_vector_store(documents)
+    rag_chain=get_rag_chain(vector_store,documents)
+    return vector_store,rag_chain
 
 st.set_page_config(page_title="Legal-RAG",layout="wide")
 st.title("Legal RAG Assistant")
@@ -26,6 +32,9 @@ if "vector_store" not in st.session_state:
 if "rag_chain" not in st.session_state:
     st.session_state.rag_chain=None
     
+if "cached_documents" not in st.session_state:
+    st.session_state.cached_documents=None
+    
 uploaded_pdf=st.file_uploader("Upload a Legal PDF",type=["pdf"])
 
 if uploaded_pdf is not None:
@@ -39,8 +48,9 @@ if uploaded_pdf is not None:
             
             documents = doc_loader(tmp_path, "legal")
             os.unlink(tmp_path) 
-            vector_store=create_vector_store(documents)
-            rag_chain=get_rag_chain(vector_store,documents)
+            st.session_state.cached_documents=documents
+            vector_store,rag_chain=build_rag_chain(uploaded_pdf.name)
+            st.session_state.vector_store=vector_store
             st.session_state.rag_chain=rag_chain
             st.session_state.vector_store=vector_store
             st.session_state.uploaded_docs.append(uploaded_pdf.name)
@@ -62,13 +72,14 @@ if st.button("Submit Query"):
     elif not user_query.strip():
         st.warning("Please ask a question.")
     else:
-        response=st.session_state.rag_chain.invoke({
+        with st.spinner("Thinking...."):
+            response=st.session_state.rag_chain.invoke({
             "input":user_query,
             "chat_history":st.session_state.chat_history
         })
         answer=response["answer"]
         
-        st.write("###Answer")
+        st.write("Answer")
         st.write(answer)
         
         st.session_state.chat_history.append(HumanMessage(content=user_query))

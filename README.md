@@ -202,17 +202,6 @@ In legal contexts a confident wrong answer is worse than no answer. The system p
 
 ---
 
-##  Roadmap
-
-- [ ] RAGAS evaluation with faithfulness and answer relevancy scores
-- [ ] Synthetic QA dataset generation for benchmarking
-- [ ] Chunk size ablation study
-- [ ] Docker containerisation
-- [ ] Cloud deployment on Render
-- [ ] Multi-document comparison queries
-- [ ] Scanned PDF support via OCR
-
----
 
 ## 👤 Author
 

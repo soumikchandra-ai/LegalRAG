@@ -84,7 +84,7 @@ Answer + Structured Citations [Doc, Page, Clause]
 ### Storage
 | Tool | Purpose |
 |---|---|
-| FAISS | Local vector index for semantic search |
+| Chroma | Local vector index for semantic search |
 | Python list (session) | Conversation history per session |
 
 ### Environment

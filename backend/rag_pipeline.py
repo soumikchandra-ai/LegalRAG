@@ -70,8 +70,10 @@ class RerankRetriever(BaseRetriever):
                                 detected_section = f"Section {m.group(1)} ({m.group(2).strip()})"
                                 break
                         break
+            print(doc[0].metadata)
+            pdf_name=doc.metadata.get("pdf_name","Unknown")
             doc.page_content = (
-                f"[METADATA -> Section Context: {detected_section} | Verified Page: {page_num}]\n"
+                f"[Section Context: {detected_section} | Verified Page: {page_num} | PDF Name: {pdf_name}]\n"
                 f"{doc.page_content}"
             )
             final_docs.append(doc)
@@ -146,7 +148,7 @@ def get_rag_chain(vector_store,documents):
             You can use bullet points if required to give clear explanations.
             CRITICAL CITATION RULES:
             1. Every response MUST explicitly list the Document Name, Page Number, and Section/Clause number at the absolute beginning of your response.
-            2. Read the structural token header string injected at the start of each context block: e.g., '[METADATA -> Section Context: Section 2 (COMPENSATION) | Verified Page: 1]'. Use these exact values.
+            2. Read the structural token header string injected at the start of each context block: e.g., '[Section Context: Section 2 (COMPENSATION) | Verified Page: 1 |PDF File: Name of the PDF from which the answer is generated]'. Use these exact values.
             3. If a clause line begins with an embedded alphabet sub-letter marker (e.g., 'H. Invoices shall be...'), merge the parent section and subsection into a standardized legal citation pattern: "Section 2.H".
             4. If the section or page is listed as "Unknown", look closely at the text strings nearby to trace the context, or do not guess. If you do not know the answer, say "I don't know."
 

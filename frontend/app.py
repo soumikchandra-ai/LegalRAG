@@ -35,30 +35,38 @@ if "rag_chain" not in st.session_state:
 if "cached_documents" not in st.session_state:
     st.session_state.cached_documents=None
     
-uploaded_pdf=st.file_uploader("Upload a Legal PDF",type=["pdf"])
+uploaded_pdfs=st.file_uploader("Upload a Legal PDF",type=["pdf"],accept_multiple_files=True)
 
-if uploaded_pdf is not None:
-    st.info(f"Selected File: {uploaded_pdf.name}")
-    
+if uploaded_pdfs:
     if st.button("Upload and Process PDF"):
         with st.spinner("Processing PDF"):
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                tmp.write(uploaded_pdf.read())
-                tmp_path = tmp.name
+            all_documents=[]
             
-            documents = doc_loader(tmp_path, "legal")
-            os.unlink(tmp_path) 
-            st.session_state.cached_documents=documents
-            vector_store,rag_chain=build_rag_chain(uploaded_pdf.name)
+            for uploaded_pdf in uploaded_pdfs:
+                with tempfile.NamedTemporaryFile(delete=False,suffix=".pdf") as tmp:
+                    tmp.write(uploaded_pdf.read())
+                    tmp_path=tmp.name
+                    
+                docs=doc_loader(tmp_path,"legal")
+                for doc in docs:
+                    doc.metadata["pdf_name"]=uploaded_pdf.name
+                all_documents.extend(docs)
+                
+                os.unlink(tmp_path)
+                
+                if uploaded_pdf.name not in st.session_state.uploaded_docs:
+                    st.session_state.uploaded_docs.append(uploaded_pdf.name)
+                    
+            st.session_state.cached_documents=all_documents
+            vector_store,rag_chain=build_rag_chain("_".join([pdf.name for pdf in uploaded_pdfs]))
+            
             st.session_state.vector_store=vector_store
             st.session_state.rag_chain=rag_chain
-            st.session_state.vector_store=vector_store
-            st.session_state.uploaded_docs.append(uploaded_pdf.name)
             
         st.success("PDF Processed Successfully.")
         
 if st.session_state.uploaded_docs:
-    st.subheader("Uploaded DOcuments")
+    st.subheader("Uploaded Documents")
     for doc in st.session_state.uploaded_docs:
         st.write(f"{doc}")
         
@@ -92,9 +100,9 @@ if st.session_state.chat_history:
     for msg in st.session_state.chat_history:
 
         if isinstance(msg, HumanMessage):
-            st.markdown(f"**Q:** {msg.content}")
+            st.markdown(f"**Query:** {msg.content}")
 
         elif isinstance(msg, AIMessage):
-            st.markdown(f"**A:** {msg.content}")
+            st.markdown(f"**AI:** {msg.content}")
 
         st.divider()

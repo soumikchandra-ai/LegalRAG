@@ -35,6 +35,46 @@ if "rag_chain" not in st.session_state:
 if "cached_documents" not in st.session_state:
     st.session_state.cached_documents=None
     
+if "source_chunks" not in st.session_state:
+    st.session_state.source_chunks=[]
+    
+with st.sidebar:
+    st.header("Session COntrols")
+    
+    msg_count=len(st.session_state.chat_history)
+    st.caption(f"{msg_count} message{'s' if msg_count!=1 else ''} in current session")
+    st.divider()
+    
+    if st.button("Clear Chat History",use_container_width=True):
+        st.session_state.chat_history=[]
+        st.session_state.source_chunks=[]
+        
+        if st.session_state.rag_chain is not None:
+            try:
+                st.session_state.rag_chain.memory.clear()
+            except AttributeError:
+                pass
+        st.success("Chat History ")
+        st.rerun()
+    st.divider()
+    
+    if st.button("Clear all Documents",use_container_width=True):
+        st.session_state.chat_history = []
+        st.session_state.source_chunks = []
+        st.session_state.uploaded_docs = []
+        st.session_state.vector_store = None
+        st.session_state.rag_chain = None
+        st.session_state.cached_documents = None
+        st.success("Everything cleared.")
+        st.rerun()
+        
+    if st.session_state.uploaded_docs:
+        st.divider()
+        st.subheader("Uploaded Documents")
+        for doc in st.session_state.uploaded_docs:
+            st.write(f"{doc}")
+        
+
 uploaded_pdfs=st.file_uploader("Upload a Legal PDF",type=["pdf"],accept_multiple_files=True)
 
 if uploaded_pdfs:
@@ -49,7 +89,11 @@ if uploaded_pdfs:
                     
                 docs=doc_loader(tmp_path,"legal")
                 for doc in docs:
+                    doc.metadata["doc_name"]=uploaded_pdf.name
                     doc.metadata["pdf_name"]=uploaded_pdf.name
+                    doc.metadata["doc_type"]=doc.metadata.get("doc_type","pdf")
+                    doc.metadata["page_number"]=doc.metadata.get("page",doc.metadata.get("page_number","N/A"))
+                    
                 all_documents.extend(docs)
                 
                 os.unlink(tmp_path)
@@ -58,51 +102,85 @@ if uploaded_pdfs:
                     st.session_state.uploaded_docs.append(uploaded_pdf.name)
                     
             st.session_state.cached_documents=all_documents
-            vector_store,rag_chain=build_rag_chain("_".join([pdf.name for pdf in uploaded_pdfs]))
             
+            if st.session_state.rag_chain is not None:
+                try:
+                    st.session_state.rag_chain.memory.clear()
+                except AttributeError:
+                    pass
+            
+            vector_store,rag_chain=build_rag_chain("_".join([pdf.name for pdf in uploaded_pdfs]))
             st.session_state.vector_store=vector_store
             st.session_state.rag_chain=rag_chain
             
         st.success("PDF Processed Successfully.")
-        
-if st.session_state.uploaded_docs:
-    st.subheader("Uploaded Documents")
-    for doc in st.session_state.uploaded_docs:
-        st.write(f"{doc}")
-        
-st.subheader("Ask Questions")
 
-user_query=st.text_area("Ask anything related to the uploaded PDF")
-
-if st.button("Submit Query"):
-    if st.session_state.vector_store is None:
-        st.warning("Please upload and Process a PDF first")
-    elif not user_query.strip():
-        st.warning("Please ask a question.")
-    else:
-        with st.spinner("Thinking...."):
-            response=st.session_state.rag_chain.invoke({
-            "input":user_query,
-            "chat_history":st.session_state.chat_history
-        })
-        answer=response["answer"]
-        
-        st.write("Answer")
-        st.write(answer)
-        
-        st.session_state.chat_history.append(HumanMessage(content=user_query))
-        
-        st.session_state.chat_history.append(AIMessage(content=answer))
-        
+st.divider()
 if st.session_state.chat_history:
-    st.subheader("Chat History")
+    st.subheader("Conversation")
+    ai_turn_index = 0
 
     for msg in st.session_state.chat_history:
-
         if isinstance(msg, HumanMessage):
-            st.markdown(f"**Query:** {msg.content}")
+            with st.chat_message("user"):
+                st.markdown(msg.content)
 
         elif isinstance(msg, AIMessage):
-            st.markdown(f"**AI:** {msg.content}")
+            with st.chat_message("assistant"):
+                st.markdown(msg.content)
 
-        st.divider()
+                if ai_turn_index < len(st.session_state.source_chunks):
+                    chunks = st.session_state.source_chunks[ai_turn_index]
+                    if chunks:
+                        with st.expander("View source passages"):
+                            for j, chunk in enumerate(chunks, 1):
+                                meta = chunk.metadata
+                                doc_name    = meta.get("doc_name") or meta.get("pdf_name", "Unknown")
+                                page_number = meta.get("page_number") or meta.get("page", "N/A")
+                                doc_type    = meta.get("doc_type", "PDF")
+
+                                st.markdown(
+                                    f"**Passage {j}** · `{doc_name}` · "
+                                    f"Page `{page_number}` · Type `{doc_type}`"
+                                )
+                                st.caption(chunk.page_content[:600])
+                                if j < len(chunks):
+                                    st.divider()
+                    else:
+                        with st.expander("View source passages"):
+                            st.info("No source passages were retrieved for this answer.")
+
+                ai_turn_index += 1
+
+st.divider()
+
+st.subheader("Ask Questions")
+user_query = st.text_area(
+    "Ask anything related to the uploaded PDF",
+    key="query_input",
+    placeholder="e.g. What are the termination clauses in this contract?"
+)
+
+if st.button("Submit Query", type="primary"):
+    # Empty query guard
+    if not user_query.strip():
+        st.warning("Please enter a question.")
+
+    elif st.session_state.vector_store is None:
+        st.warning("Please upload and process a PDF first.")
+
+    else:
+        with st.spinner("Thinking…"):
+            response = st.session_state.rag_chain.invoke({
+                "input": user_query,
+                "chat_history": st.session_state.chat_history,
+            })
+
+        answer     = response["answer"]
+        source_docs = response.get("context", [])
+
+        st.session_state.chat_history.append(HumanMessage(content=user_query))
+        st.session_state.chat_history.append(AIMessage(content=answer))
+        st.session_state.source_chunks.append(source_docs)
+
+        st.rerun()

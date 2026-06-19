@@ -3,11 +3,13 @@ import sys
 ROOT_DIR=Path(__file__).resolve().parent.parent
 sys.path.insert(0,str(ROOT_DIR))
 import tempfile,os
+import uuid
 import streamlit as st
 from backend.Document_Loader import doc_loader
 from backend.Text_Splitter import split_docs
 from backend.Vector_Store import create_vector_store
 from backend.rag_pipeline import get_rag_chain
+from backend.logger import log_interaction
 from langchain_core.messages import HumanMessage,AIMessage
 
 @st.cache_resource
@@ -38,16 +40,24 @@ if "cached_documents" not in st.session_state:
 if "source_chunks" not in st.session_state:
     st.session_state.source_chunks=[]
     
+if "session_id" not in st.session_state:
+    st.session_state.session_id=str(uuid.uuid4())
+    
+if "last_log_entry" not in st.session_state:
+    st.session_state.last_log_entry=None
+    
 with st.sidebar:
-    st.header("Session COntrols")
+    st.header("Session Controls")
     
     msg_count=len(st.session_state.chat_history)
     st.caption(f"{msg_count} message{'s' if msg_count!=1 else ''} in current session")
+    st.caption(f"Session: {st.session_state.session_id[:8]}")
     st.divider()
     
     if st.button("Clear Chat History",use_container_width=True):
         st.session_state.chat_history=[]
         st.session_state.source_chunks=[]
+        st.session_state.last_log_entry=None
         
         if st.session_state.rag_chain is not None:
             try:
@@ -65,6 +75,7 @@ with st.sidebar:
         st.session_state.vector_store = None
         st.session_state.rag_chain = None
         st.session_state.cached_documents = None
+        st.session_state.last_log_entry=None
         st.success("Everything cleared.")
         st.rerun()
         
@@ -73,6 +84,15 @@ with st.sidebar:
         st.subheader("Uploaded Documents")
         for doc in st.session_state.uploaded_docs:
             st.write(f"{doc}")
+    st.divider()
+    
+    show_debug=st.checkbox("Show debug info")
+    if show_debug:
+        if st.session_state.last_log_entry:
+            st.caption("Last Logged Entry:")
+            st.json(st.session_state.last_log_entry)
+        else:
+            st.info("No entries logged")
         
 
 uploaded_pdfs=st.file_uploader("Upload a Legal PDF",type=["pdf"],accept_multiple_files=True)
@@ -178,6 +198,12 @@ if st.button("Submit Query", type="primary"):
 
         answer     = response["answer"]
         source_docs = response.get("context", [])
+
+        entry=log_interaction(question=user_query,
+                              answer=answer,
+                              source_documents=source_docs,
+                              session_id=st.session_state.session_id)
+        st.session_state.last_log_entry=entry
 
         st.session_state.chat_history.append(HumanMessage(content=user_query))
         st.session_state.chat_history.append(AIMessage(content=answer))

@@ -11,6 +11,7 @@ from backend.Vector_Store import create_vector_store
 from backend.rag_pipeline import get_rag_chain
 from backend.logger import log_interaction
 from langchain_core.messages import HumanMessage,AIMessage
+import time
 
 try:
     @st.cache_resource
@@ -47,17 +48,32 @@ try:
     if "last_log_entry" not in st.session_state:
         st.session_state.last_log_entry=None
         
+    if "last_token_count" not in st.session_state:
+        st.session_state.last_token_count=None
+
+    if "last_query_time" not in st.session_state:
+        st.session_state.last_query_time=None
+        
     with st.sidebar:
         st.header("Session Controls")
         msg_count=len(st.session_state.chat_history)
         st.caption(f"{msg_count} message{'s' if msg_count!=1 else ''} in current session")
         st.caption(f"Session: {st.session_state.session_id[:8]}")
+        
+        if st.session_state.last_token_count is not None:
+            st.caption(f"Tokens used in this query: **{st.session_state.last_token_count}**")
+        
+        if st.session_state.last_query_time is not None:
+            st.caption(f"Last query took: **{st.session_state.last_query_time:.1f}s**")
+                   
         st.divider()
         
         if st.button("Clear Chat History",use_container_width=True):
             st.session_state.chat_history=[]
             st.session_state.source_chunks=[]
             st.session_state.last_log_entry=None
+            st.session_state.last_token_count=None
+            st.session_state.last_query_time=None
             
             if st.session_state.rag_chain is not None:
                 try:
@@ -103,11 +119,16 @@ try:
                 uploaded_failed=False
                 
                 for uploaded_pdf in uploaded_pdfs:
+                    if uploaded_pdf.name in st.session_state.uploaded_docs:
+                        st.info(f"**{uploaded_pdf.name}** is already loaded")
+                        continue
                     try:
                         with tempfile.NamedTemporaryFile(delete=False,suffix=".pdf") as tmp:
                             tmp.write(uploaded_pdf.read())
                             tmp_path=tmp.name
+                        t0=time.time()
                         docs=doc_loader(tmp_path,"legal")
+                        print(f"[PROFILE] PDF extraction ({uploaded_pdf.name}): {time.time() - t0:.2f}s")
                         os.unlink(tmp_path)
                         
                     except Exception as e:
@@ -217,15 +238,30 @@ try:
 
         else:
             try:
+                query_start=time.time()
                 with st.spinner("Thinking…"):
                     response = st.session_state.rag_chain.invoke({
                         "input": user_query,
                         "chat_history": st.session_state.chat_history,
                     })
-
+                    
+                query_elapsed=time.time()-query_start
+                st.session_state.last_query_time=query_elapsed
+                print(f"[PROFILE] Full query-to-answer: {query_elapsed:.2f}s")
                 answer     = response["answer"]
                 source_docs = response.get("context", [])
-
+                
+                token_count=None
+                try:    
+                    usage=response.get("usage_metadata") or {}
+                    if not usage:
+                        raw_gen=response.get("output_metadata",{})
+                        usage=raw_gen.get("usage_metadat",{})
+                        
+                    token_count=(usage.get("total_token_count"))
+                except Exception:
+                    pass
+                
                 if not source_docs:
                     answer=("No relevant passages found in the uploaded documents for this question. Please try rephrashing.")
                     

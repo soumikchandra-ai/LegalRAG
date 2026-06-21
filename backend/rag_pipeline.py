@@ -13,36 +13,47 @@ from typing import List
 from langchain_core.documents import Document
 import re
 from pathlib import Path
+import streamlit as st
+import time
 from backend.Document_Loader import doc_loader
 from dotenv import load_dotenv
 
 load_dotenv()
 
-embedding = GoogleGenerativeAIEmbeddings(model="gemini-embedding-2-preview")
-model = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite")
-reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+@st.cache_resource
+def get_embedding_model():
+    return GoogleGenerativeAIEmbeddings(model="gemini-embedding-2-preview")
 
+@st.cache_resource
+def get_reranker():
+    return CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+@st.cache_resource
+def get_llm():
+    return ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite")
 
 class RerankRetriever(BaseRetriever):
     base_retriever: any
     top_k: int = 3
 
     def _get_relevant_documents(self, query: str) -> List[Document]:
+        t0=time.time()
         raw = self.base_retriever.invoke(query)
-
-        # ── FIX 1: flatten if MultiQueryRetriever returns list-of-lists ──────
-        docs: List[Document] = []
-        for item in raw:
-            if isinstance(item, list):
-                docs.extend(item)       # unwrap nested list
-            elif isinstance(item, Document):
-                docs.append(item)
-            # anything else is silently skipped (shouldn't happen)
+        print(f"[PROFILE] Ensemble retrieval: {time.time() - t0:.2f}s")
+        
+        docs:List[Document]=[]
+        def extract_docs(obj):
+            if isinstance(obj,Document):
+                docs.append(obj)
+            elif isinstance(obj,List):
+                for item in obj:
+                    extract_docs(item)
+        
+        extract_docs(raw)
 
         if not docs:
             return []
 
-        # ── FIX 2: deduplicate by page_content so reranker isn't penalised ──
         seen: set = set()
         unique_docs: List[Document] = []
         for doc in docs:
@@ -55,11 +66,19 @@ class RerankRetriever(BaseRetriever):
         section_pattern = re.compile(r'(?:^\s*|\n)(\d+)\.\s+([A-Z\s,]{3,})(?:\.|\n|$)')
         page_pattern    = re.compile(r'Page\s+(\d+)', re.IGNORECASE)
 
+        t1=time.time()
+        reranker=get_reranker()
         pairs = [(query, doc.page_content) for doc in docs]
-        raw_scores = reranker.predict(pairs)   # ── FIX 3: don't reuse 'scores' as loop var
+        raw_scores = reranker.predict(pairs)
+        print(f"[PROFILE] Reranking {len(docs)} docs: {time.time() - t1:.2f}s")
 
         ranked_docs = sorted(zip(docs, raw_scores), key=lambda x: x[1], reverse=True)
-
+        top_chunks=[doc for doc,_ in ranked_docs[:self.top_k]]
+        avg_chars=sum(len(d.page_content) for d in top_chunks)/max(len(top_chunks),1)
+        avg_tokens=int(avg_chars/4)
+        total_context_tokens=avg_tokens*self.top_k
+        print(f"[PROFILE] Avg chunk ~{avg_tokens} tokens | Total context ~{total_context_tokens} tokens")
+        
         final_docs: List[Document] = []
         for doc, score in ranked_docs[:self.top_k]:   # ── FIX 3: renamed to 'score'
             metadata_page = doc.metadata.get("page", None)
@@ -96,10 +115,11 @@ class RerankRetriever(BaseRetriever):
 
         return final_docs
 
-
 def get_rag_chain(vector_store, documents):
+    t0=time.time()
     bm25_retriever = BM25Retriever.from_documents(documents)
     bm25_retriever.k = 10
+    print(f"[PROFILE] BM25 index build: {time.time() - t0:.2f}s")
 
     retriever = vector_store.as_retriever(
         search_type="similarity",
@@ -110,10 +130,12 @@ def get_rag_chain(vector_store, documents):
         template="Generate 3 different questions from this : {question}",
         input_variables=["question"]
     )
+    
+    llm=get_llm()
 
     multi_query_retriever = MultiQueryRetriever.from_llm(
         retriever=retriever,
-        llm=model,
+        llm=llm,
         prompt=prompt,
         include_original=False
     )
@@ -140,7 +162,7 @@ def get_rag_chain(vector_store, documents):
     ])
 
     history_aware_retriever = create_history_aware_retriever(
-        model, rerank_retriever, contextualize_q_prompt
+        llm, rerank_retriever, contextualize_q_prompt
     )
 
     qa_system_prompt = (
@@ -168,7 +190,7 @@ def get_rag_chain(vector_store, documents):
         ("human", "{input}"),
     ])
 
-    question_answer_chain = create_stuff_documents_chain(model, qa_prompt)
+    question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
     rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
 
     return rag_chain

@@ -21,8 +21,33 @@ try:
         rag_chain=get_rag_chain(vector_store,documents)
         return vector_store,rag_chain
 
-    st.set_page_config(page_title="Legal-RAG",layout="wide")
-    st.title("Legal RAG Assistant")
+    st.set_page_config(page_title="Legal-RAG",layout="wide",initial_sidebar_state="expanded")
+    st.markdown("""
+    <style>
+    .citation-card {
+        background: #1e2a3a;
+        border-left: 4px solid #4f8ef7;
+        border-radius: 6px;
+        padding: 10px 14px;
+        margin-bottom: 10px;
+        font-size: 0.88rem;
+        color: #e0e6f0;
+    }
+    .welcome-box {
+        background: #1a1a1a;
+        border: 1.5px dashed #444;
+        border-radius: 12px;
+        padding: 40px 32px;
+        text-align: center;
+        margin-top: 32px;
+    }
+    .answer-caption {
+        font-size: 0.78rem;
+        color: #888;
+        margin-bottom: 2px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
     if "chat_history" not in st.session_state:
         st.session_state.chat_history=[]
@@ -53,9 +78,26 @@ try:
 
     if "last_query_time" not in st.session_state:
         st.session_state.last_query_time=None
+    
+    if "doc_chunk_counts" not in st.session_state:
+        st.session_state.doc_chunk_counts = {}
         
     with st.sidebar:
-        st.header("Session Controls")
+        st.header("LegalRAG")
+        st.markdown(
+            "<span style='font-size:0.85rem;color:#6b7280;'>"
+            "AI-powered Q&A across legal documents with source citations."
+            "</span>",
+            unsafe_allow_html=True,
+        )
+        st.divider()
+
+        if st.session_state.vector_store is not None:
+            st.markdown("&nbsp;**Ready** — documents loaded",unsafe_allow_html=True)
+        else:
+            st.markdown("&nbsp;No documents loaded",unsafe_allow_html=True)
+
+        st.divider()
         msg_count=len(st.session_state.chat_history)
         st.caption(f"{msg_count} message{'s' if msg_count!=1 else ''} in current session")
         st.caption(f"Session: {st.session_state.session_id[:8]}")
@@ -82,8 +124,7 @@ try:
                     pass
             st.success("Chat History ")
             st.rerun()
-        st.divider()
-        
+            
         if st.button("Clear all Documents",use_container_width=True):
             st.session_state.chat_history = []
             st.session_state.source_chunks = []
@@ -94,12 +135,31 @@ try:
             st.session_state.last_log_entry=None
             st.success("Everything cleared.")
             st.rerun()
-            
+        
         if st.session_state.uploaded_docs:
             st.divider()
-            st.subheader("Uploaded Documents")
-            for doc in st.session_state.uploaded_docs:
-                st.write(f"{doc}")
+            st.markdown("**Loaded Documents**")
+            for doc_name in st.session_state.uploaded_docs:
+                chunk_count=st.session_state.doc_chunk_counts.get(doc_name,"-")
+                st.markdown(
+                f"""
+                <div style="
+                    border:1px solid #333;
+                    border-radius:8px;
+                    padding:8px 12px;
+                    margin-bottom:8px;
+                    font-size:0.83rem;
+                    background:#1a1a1a;
+                    color:#f0f0f0;
+                ">
+                    <b>{doc_name}</b><br>
+                    <span style="color:#888;">
+                        PDF &nbsp;·&nbsp; {chunk_count} chunks
+                    </span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
         st.divider()
         
         show_debug=st.checkbox("Show debug info")
@@ -150,39 +210,58 @@ try:
                         doc.metadata["page_number"]=doc.metadata.get("page",doc.metadata.get("page_number","N/A"))
                         
                     all_documents.extend(docs)
+                    st.session_state.doc_chunk_counts[uploaded_pdf.name] = len(docs)
                     if uploaded_pdf.name not in st.session_state.uploaded_docs:
                         st.session_state.uploaded_docs.append(uploaded_pdf.name)
                             
-                    if all_documents:
-                        old_vector_store=st.session_state.vector_store
-                        old_rag_chain=st.session_state.rag_chain
+                if all_documents:
+                    old_vector_store=st.session_state.vector_store
+                    old_rag_chain=st.session_state.rag_chain
+                    
+                    try:
+                        st.session_state.cached_documents=all_documents
+                        if st.session_state.rag_chain is not None:
+                            try:
+                                st.session_state.rag_chain.memory.clear()
+                            except AttributeError:
+                                pass
                         
-                        try:
-                            st.session_state.cached_documents=all_documents
-                            if st.session_state.rag_chain is not None:
-                                try:
-                                    st.session_state.rag_chain.memory.clear()
-                                except AttributeError:
-                                    pass
-                            
-                            vector_store,rag_chain=build_rag_chain("_".join([pdf.name for pdf in uploaded_pdfs]))
-                            st.session_state.vector_store=vector_store
-                            st.session_state.rag_chain=rag_chain
-                            
-                        except Exception as e:
-                            st.session_state.vector_store=old_vector_store
-                            st.session_state.rag_chain=old_rag_chain
-                            st.error(f"Can't build document index.Your previous session is still alive.Detail: {type(e).__name__}:{e}")
-                            uploaded_failed=True
-                            
-                    if not uploaded_failed:
-                        st.success("PDF Processed Successfully.")
+                        vector_store,rag_chain=build_rag_chain("_".join([pdf.name for pdf in uploaded_pdfs]))
+                        st.session_state.vector_store=vector_store
+                        st.session_state.rag_chain=rag_chain
+                        
+                    except Exception as e:
+                        st.session_state.vector_store=old_vector_store
+                        st.session_state.rag_chain=old_rag_chain
+                        st.error(f"Can't build document index.Your previous session is still alive.Detail: {type(e).__name__}:{e}")
+                        uploaded_failed=True
+                        
+                if not uploaded_failed:
+                    st.success("PDF Processed Successfully.")
+                    st.rerun()
+    if st.session_state.vector_store is None and not uploaded_pdfs:
+        st.markdown(
+            """
+            <div class="welcome-box">
+                <h3 style="margin:12px 0 6px;color:#f0f0f0;">Welcome to LegalRAG</h3>
+                <p style="color:#888;max-width:420px;margin:0 auto 18px;">
+                    Upload a legal PDF using the file picker above, then ask
+                    questions in plain English. Every answer cites the exact
+                    document, page, and clause it came from.
+                </p>
+                <p style="color:#4f8ef7;font-weight:600;">
+                    ← Upload a PDF above to get started
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
                                   
     st.divider()
     if st.session_state.chat_history:
         st.subheader("Conversation")
         ai_turn_index = 0
-
+        doc_count = len(st.session_state.uploaded_docs)
         for msg in st.session_state.chat_history:
             if isinstance(msg, HumanMessage):
                 with st.chat_message("user"):
@@ -190,6 +269,14 @@ try:
 
             elif isinstance(msg, AIMessage):
                 with st.chat_message("assistant"):
+                    if doc_count > 0:
+                        st.markdown(
+                            f"<div class='answer-caption'>"
+                            f"Answering across {doc_count} "
+                            f"document{'s' if doc_count != 1 else ''}"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
                     st.markdown(msg.content)
 
                     if ai_turn_index < len(st.session_state.source_chunks):
@@ -203,8 +290,13 @@ try:
                                     doc_type    = meta.get("doc_type", "PDF")
 
                                     st.markdown(
-                                        f"**Passage {j}** · `{doc_name}` · "
-                                        f"Page `{page_number}` · Type `{doc_type}`"
+                                        f"<div class='citation-card'>"
+                                        f"<b>Source {j}:</b> &nbsp;"
+                                        f"{doc_name} &nbsp;·&nbsp; "
+                                        f"Page {page_number} &nbsp;·&nbsp; "
+                                        f"{doc_type}"
+                                        f"</div>",
+                                        unsafe_allow_html=True,
                                     )
                                     st.caption(chunk.page_content[:600])
                                     if j < len(chunks):
@@ -256,7 +348,7 @@ try:
                     usage=response.get("usage_metadata") or {}
                     if not usage:
                         raw_gen=response.get("output_metadata",{})
-                        usage=raw_gen.get("usage_metadat",{})
+                        usage=raw_gen.get("usage_metadata",{})
                         
                     token_count=(usage.get("total_token_count"))
                 except Exception:

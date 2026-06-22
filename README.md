@@ -2,7 +2,7 @@
 
 ### AI-powered Question Answering across Legal Documents with Source Citations
 
-![LegalRAG App Screenshot](docs/screenshot.png)
+![LegalRAG App Screenshot](docs/sample_app.png)
 
 ##  Overview
 
@@ -69,6 +69,7 @@ Handles:
 * Invalid documents
 
 ---
+```
 LegalRAG/
 
 ├── .streamlit/
@@ -104,6 +105,7 @@ LegalRAG/
 │   # Project documentation
 └── requirements.txt
     # Python dependencies
+```
 ---
 
 #  Installation

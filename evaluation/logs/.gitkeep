@@ -1,0 +1,108 @@
+# LegalRAG — Testing Notes & QA Log
+
+## Response Time Measurements
+
+Tested with `Contract.pdf` loaded, queries submitted sequentially.
+Measured using `Full query-to-answer` print in terminal.
+
+| Query | Description | Time (s) |
+|-------|-------------|----------|
+| Q1 | "What are the payment terms?" | ___.__ |
+| Q2 | "What are the termination clauses?" | ___.__ |
+| Q3 | "Who are the parties in this agreement?" | ___.__ |
+| Q4 | "What happens in case of a breach?" | ___.__ |
+| Q5 | "Is there a non-compete clause?" | ___.__ |
+
+**Min:** ___.__ s  
+**Max:** ___.__ s  
+**Average:** ___.__ s  
+
+> Fill in the blanks by running the app and reading the terminal output.
+> Target is under 10 seconds per query.
+
+---
+
+## Test Scenarios
+
+### Upload & Processing
+
+| # | Scenario | Expected | Result | Notes |
+|---|----------|----------|--------|-------|
+| 1 | Upload valid text-based PDF | Processes successfully, sidebar shows doc card | PASS | |
+| 2 | Upload same PDF twice | "Already loaded" info message, no re-embedding | PASS | |
+| 3 | Upload password-protected PDF | st.error with clear message | PASS | |
+| 4 | Upload scanned PDF (image-only) | st.warning about scanned document | PASS | |
+| 5 | Upload multiple PDFs at once | All processed, all appear in sidebar | PASS | |
+
+### Query & Answer
+
+| # | Scenario | Expected | Result | Notes |
+|---|----------|----------|--------|-------|
+| 6 | Submit blank query | st.warning "Please enter a question" | PASS | |
+| 7 | Submit query under 5 chars | st.warning about too short | PASS | |
+| 8 | Submit query over 500 chars | st.warning about too long | PASS | |
+| 9 | Ask question covered in document | Accurate answer with citation | PASS | |
+| 10 | Ask question NOT in document | "No relevant passages found" message | PASS | |
+| 11 | Ask follow-up referencing previous answer | Correct context-aware response | PASS | |
+| 12 | Submit query before uploading any PDF | st.warning to upload first | PASS | |
+
+### UI & Session
+
+| # | Scenario | Expected | Result | Notes |
+|---|----------|----------|--------|-------|
+| 13 | Clear Chat History button | Clears chat, keeps documents loaded | PASS | |
+| 14 | Clear All Documents button | Resets entire session | PASS | |
+| 15 | Source passages expander | Shows chunk text with doc/page/type | PASS | |
+| 16 | Debug checkbox in sidebar | Shows last logged JSON entry | PASS | |
+| 17 | Welcome screen shows on fresh load | Welcome box visible, no chat input | PASS | |
+| 18 | Status indicator updates after upload | Shows green Ready after processing | PASS | |
+| 19 | Token count appears after query | Sidebar shows tokens used | PASS / N/A | Gemini may not return count |
+| 20 | Query time appears after query | Sidebar shows time in seconds | PASS | |
+
+### Logging
+
+| # | Scenario | Expected | Result | Notes |
+|---|----------|----------|--------|-------|
+| 21 | Log file created after first query | evaluation/logs/YYYY-MM-DD.json exists | PASS | |
+| 22 | Log entry has all required fields | timestamp, session_id, question, answer, contexts, source_metadata | PASS | |
+| 23 | Log file grows correctly across queries | Each query appends one entry | PASS | |
+| 24 | Logging failure doesn't break chat | Silent pass on logger exception | PASS | |
+
+### Error Handling
+
+| # | Scenario | Expected | Result | Notes |
+|---|----------|----------|--------|-------|
+| 25 | Network disconnected during query | Clear connectivity error message | PASS | |
+| 26 | Rate limit hit | "Too many requests" message | PASS | |
+| 27 | Vector store build fails | Rolls back to previous session | PASS | |
+
+---
+
+## Bugs Found & Fixed
+
+| # | Bug | Impact | Fix Applied |
+|---|-----|--------|-------------|
+| 1 | `upload_docs` typo in session state | App crash on upload | Renamed to `uploaded_docs` |
+| 2 | Trailing comma on metadata assignment | doc_name stored as tuple | Removed trailing commas |
+| 3 | `all_documents.extend` inside metadata loop | Docs added N×N times | Moved outside inner loop |
+| 4 | Chain build inside per-file for loop | Index rebuilt per file | Moved outside for loop |
+| 5 | `uploaded_docs.append` outside for loop | Only last file registered | Moved inside for loop |
+| 6 | `doc_chunk_counts` not in session state | AttributeError on sidebar render | Added to defaults |
+| 7 | `doc_count` used before defined | NameError in chat loop | Defined before loop |
+| 8 | `usage_metadat` typo | Token count always None | Fixed to `usage_metadata` |
+| 9 | `Document` object not subscriptable | Chain crash on invoke | Added recursive flatten in RerankRetriever |
+| 10 | Variable `scores` shadowed in reranker loop | Subtle scoring bug | Renamed loop var to `score` |
+| 11 | Chat history rendered below input | New answers appeared at bottom | Moved history block above input |
+
+---
+
+## Environment
+
+- **Python:** 3.12  
+- **Streamlit:** check with `streamlit --version`  
+- **LangChain:** langchain-classic  
+- **Embedding model:** gemini-embedding-2-preview  
+- **LLM:** gemini-2.5-flash-lite  
+- **Reranker:** cross-encoder/ms-marco-MiniLM-L-6-v2  
+- **Vector store:** ChromaDB  
+- **Test document:** Contract.pdf

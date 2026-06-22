@@ -294,6 +294,6 @@ evaluation/logs/
 
 
 
-#  Author
+#  Soumik Chandra
 
 Built as an AI-powered Legal Document Intelligence system using RAG architecture.

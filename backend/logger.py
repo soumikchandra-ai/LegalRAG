@@ -8,7 +8,7 @@ LOG_DIR=Path(__file__).resolve().parent.parent/"evaluation"/"logs"
 
 LOG_DIR.mkdir(parents=True,exist_ok=True)
 
-MAX_LOG_SIZE_BYTES=5*1024*1024 #5MB maximum size of the log file
+MAX_LOG_SIZE_BYTES=5*1024*1024 #5MB is the maximum size of the log file
 
 def _get_log_path()->Path:
     today=datetime.now().strftime("%Y-%m-%d")

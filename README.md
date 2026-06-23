@@ -192,7 +192,7 @@ http://localhost:8501
 | Frontend              | Streamlit                    |
 | PDF Processing        | PyMuPDF                      |
 | Embeddings            | Google Gemini Embedding      |
-| LLM                   | Google Gemini 2.5 Flash Lite |
+| LLM                   | Google Gemini 2.5 Flash      |
 | Vector Database       | ChromaDB                     |
 | Retrieval             | BM25 + Vector Search         |
 | Retrieval Enhancement | MultiQuery Retriever         |

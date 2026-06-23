@@ -1,6 +1,4 @@
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from langchain_chroma import Chroma
-from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate, PromptTemplate
 from langchain_classic.chains import create_history_aware_retriever, create_retrieval_chain
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain
@@ -12,7 +10,6 @@ from langchain_core.retrievers import BaseRetriever
 from typing import List
 from langchain_core.documents import Document
 import re
-from pathlib import Path
 import streamlit as st
 import time
 from backend.Document_Loader import doc_loader
@@ -30,7 +27,7 @@ def get_reranker():
 
 @st.cache_resource
 def get_llm():
-    return ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite")
+    return ChatGoogleGenerativeAI(model="gemini-2.5-flash")
 
 class RerankRetriever(BaseRetriever):
     base_retriever: any
@@ -80,7 +77,7 @@ class RerankRetriever(BaseRetriever):
         print(f"[PROFILE] Avg chunk ~{avg_tokens} tokens | Total context ~{total_context_tokens} tokens")
         
         final_docs: List[Document] = []
-        for doc, score in ranked_docs[:self.top_k]:   # ── FIX 3: renamed to 'score'
+        for doc, score in ranked_docs[:self.top_k]:
             metadata_page = doc.metadata.get("page", None)
             page_num = str(metadata_page + 1) if metadata_page is not None else "Unknown"
 

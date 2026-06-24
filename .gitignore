@@ -3,3 +3,4 @@ vragenv/
 backend/multiquery.py
 data/chroma_db/
 evaluation/logs/*.json
+evaluation/results/*.json

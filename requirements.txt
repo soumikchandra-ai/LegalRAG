@@ -12,3 +12,5 @@ chroma
 transformers
 sentence-transformers
 streamlit
+ragas
+datasets

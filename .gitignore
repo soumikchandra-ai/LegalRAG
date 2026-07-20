@@ -5,3 +5,5 @@ data/chroma_db/
 evaluation/logs/*.json
 evaluation/results/*.json
 evaluation/*.json
+__pycache__/
+*.pyc
